@@ -272,8 +272,11 @@ st.markdown('''<div class="hero" aria-label="Weather Aware Forecast Vegetable Pr
 
 @st.cache_data
 def read_csv(filename):
-    p = DATA / filename
-    return pd.read_csv(p) if p.exists() else None
+    """Read exports from GitHub repository root or deployment/ folder."""
+    for path in (ROOT / filename, DATA / filename):
+        if path.is_file():
+            return pd.read_csv(path)
+    return None
 
 @st.cache_data
 def fallback_forecasts():
