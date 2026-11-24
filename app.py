@@ -423,16 +423,16 @@ st.markdown('#### Proposed hybrid model: ARIMA–N-BEATSX + Weather')
 # The corresponding academic units remain stated accurately in the help text:
 # MAE/RMSE = RM; MSE = RM squared; MAPE = percent.
 c1, c2, c3, c4, c5 = st.columns(5, gap='small')
-c1.metric('Forecast price', metric_value(hybrid_f, 'forecast_price', digits=2, prefix='RM '),
-          help='Saved one-week-ahead M4 hybrid forecast for 27 July 2026. Only this card uses the RM prefix.')
-c2.metric('MAE', metric_value(hybrid_m, 'MAE', digits=4),
-          help='Mean Absolute Error: average absolute deviation. Shown as a decimal; mathematically its unit is RM. Lower is better.')
-c3.metric('MSE', metric_value(hybrid_m, 'MSE', digits=4),
-          help='Mean Squared Error: average squared deviation, shown as a decimal (unit RM²). Lower is better.')
-c4.metric('RMSE', metric_value(hybrid_m, 'RMSE', digits=4),
-          help='Root Mean Squared Error: penalises larger mistakes, shown as a decimal (unit RM). Lower is better.')
-c5.metric('MAPE', metric_value(hybrid_m, 'MAPE', digits=2, suffix='%'),
-          help='Mean Absolute Percentage Error: average relative forecast error. Shown as a percentage. Lower is better.')
+c1.metric('Next week’s estimated price', metric_value(hybrid_f, 'forecast_price', digits=2, prefix='RM '),
+          help='The estimated retail price for the week of 27 July 2026, calculated by the proposed hybrid model. This is a historical research demonstration, not a live forecast.')
+c2.metric('Average prediction mistake', metric_value(hybrid_m, 'MAE', digits=4),
+          help='MAE (Mean Absolute Error): on the test weeks, how far the predicted price was from the actual price on average. Its mathematical unit is RM, although the card shows only the number. Smaller is better.')
+c3.metric('Squared error score', metric_value(hybrid_m, 'MSE', digits=4),
+          help='MSE (Mean Squared Error): squares each forecasting mistake before finding the average. Large mistakes affect this score more. The mathematical unit is RM², but the card displays only the number. Smaller is better.')
+c4.metric('Error with big misses', metric_value(hybrid_m, 'RMSE', digits=4),
+          help='RMSE (Root Mean Squared Error): describes typical forecast error while giving extra weight to bigger misses. Its mathematical unit is RM, although the card shows only the number. Smaller is better.')
+c5.metric('Average percentage off', metric_value(hybrid_m, 'MAPE', digits=2, suffix='%'),
+          help='MAPE (Mean Absolute Percentage Error): shows how many percent the predicted price was away from the actual price, on average. For example, 15.67% means forecasts were off by about 15.67% on average. Smaller is better.')
 
 if metrics_fallback:
     st.caption('Accuracy metrics are saved final tuned test results. MSE was calculated by squaring the rounded RMSE. For full-precision results, use deployment/model_evaluation.csv.')
