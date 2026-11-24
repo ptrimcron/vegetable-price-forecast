@@ -414,28 +414,126 @@ st.subheader(f'{vegetable} weekly price forecasting')
 st.caption('Historical demonstration: forecast origin 20 July 2026; target week 27 July 2026. Not a live forecast.')
 st.markdown('#### Proposed hybrid model: ARIMA–N-BEATSX + Weather')
 
-# The displayed errors are *not* all price differences in RM:
-# MAE, RMSE = RM; MSE = RM²; MAPE = percentage.
+# Only the forecast-price card displays an RM currency prefix.  Error cards are
+# deliberately displayed as decimal numbers (and MAPE as a percentage), as requested.
+# The corresponding academic units remain stated accurately in the help text:
+# MAE/RMSE = RM; MSE = RM squared; MAPE = percent.
 c1, c2, c3, c4, c5 = st.columns(5, gap='small')
-c1.metric('Forecast price (RM)', metric_value(hybrid_f, 'forecast_price', digits=2, prefix='RM '),
-          help='Historical saved next-week hybrid price forecast. Not a live forecast.')
-c2.metric('MAE (RM)', metric_value(hybrid_m, 'MAE', digits=4),
-          help='Mean Absolute Error. Average absolute prediction error, measured in ringgit (RM). Lower is better.')
-c3.metric('MSE (RM²)', metric_value(hybrid_m, 'MSE', digits=4),
-          help='Mean Squared Error. Average squared prediction error; its unit is RM squared, not RM. Lower is better.')
-c4.metric('RMSE (RM)', metric_value(hybrid_m, 'RMSE', digits=4),
-          help='Root Mean Squared Error. Penalizes larger misses more heavily, measured in ringgit (RM). Lower is better.')
-c5.metric('MAPE (%)', metric_value(hybrid_m, 'MAPE', digits=2, suffix='%'),
-          help='Mean Absolute Percentage Error. Average percentage forecast error. Lower is better.')
+c1.metric('Forecast price', metric_value(hybrid_f, 'forecast_price', digits=2, prefix='RM '),
+          help='Saved one-week-ahead M4 hybrid forecast for 27 July 2026. Only this card uses the RM prefix.')
+c2.metric('MAE', metric_value(hybrid_m, 'MAE', digits=4),
+          help='Mean Absolute Error: average absolute deviation. Shown as a decimal; mathematically its unit is RM. Lower is better.')
+c3.metric('MSE', metric_value(hybrid_m, 'MSE', digits=4),
+          help='Mean Squared Error: average squared deviation, shown as a decimal (unit RM²). Lower is better.')
+c4.metric('RMSE', metric_value(hybrid_m, 'RMSE', digits=4),
+          help='Root Mean Squared Error: penalises larger mistakes, shown as a decimal (unit RM). Lower is better.')
+c5.metric('MAPE', metric_value(hybrid_m, 'MAPE', digits=2, suffix='%'),
+          help='Mean Absolute Percentage Error: average relative forecast error. Shown as a percentage. Lower is better.')
 
 if metrics_fallback:
     st.caption('Accuracy metrics are saved final tuned test results. MSE was calculated by squaring the rounded RMSE. For full-precision results, use deployment/model_evaluation.csv.')
 if forecast_fallback:
     st.caption('The forecast uses the saved historical prototype snapshot because deployment/all_model_forecasts.csv is not available.')
-st.caption("Errors are calculated on held-out test weeks; they are not differences between today's actual price and the future forecast.")
+st.caption("Accuracy cards show held-out testing errors as decimals (MAPE as a percentage). The forecast card alone displays a predicted price in RM; the errors are not differences from today’s price.")
 
-# A SINGLE SHAP panel, directly below the five cards, updates for the vegetable
-# selected in the persistent sidebar. It explains M3b, not the M4 hybrid forecast.
+# The main forecasting visual comes IMMEDIATELY AFTER the cards.
+# When the project CSV is present it shows historical prices and the next-week
+# M4 forecast. Otherwise, it still gives a truthful graph of saved forecasts:
+# five model outputs for 27 July 2026 (not invented historical observations).
+st.divider()
+st.subheader(f'📈 {vegetable} forecasting graph')
+st.caption('Historical research demonstration: last data week 20 July 2026; forecast target 27 July 2026. Not a live price feed.')
+
+forecast_target = pd.NaT
+forecast_value = None
+if not hybrid_f.empty:
+    forecast_target = pd.to_datetime(hybrid_f.iloc[0]['forecast_week'], errors='coerce')
+    if pd.notna(hybrid_f.iloc[0]['forecast_price']):
+        forecast_value = float(hybrid_f.iloc[0]['forecast_price'])
+
+selected_history = pd.DataFrame()
+if prices is not None:
+    selected_history = prices[
+        prices['vegetable'].str.casefold() == vegetable.casefold()
+    ].dropna(subset=['week_start', 'retail_price']).sort_values('week_start').copy()
+    # Do not plot data from AFTER the target date as if it were known at the origin.
+    if pd.notna(forecast_target):
+        selected_history = selected_history[selected_history['week_start'] < forecast_target]
+    selected_history = selected_history.tail(30)
+
+if not selected_history.empty:
+    forecast_fig = go.Figure()
+    forecast_fig.add_trace(go.Scatter(
+        x=selected_history['week_start'], y=selected_history['retail_price'],
+        mode='lines+markers', name='Observed weekly retail price',
+        line=dict(color='#20846d', width=3), marker=dict(size=6),
+        hovertemplate='<b>Recorded price</b><br>Week of %{x|%d %b %Y}<br>RM %{y:.2f}<extra></extra>'
+    ))
+    if forecast_value is not None and pd.notna(forecast_target):
+        last_date = selected_history.iloc[-1]['week_start']
+        last_price = float(selected_history.iloc[-1]['retail_price'])
+        forecast_fig.add_trace(go.Scatter(
+            x=[last_date, forecast_target], y=[last_price, forecast_value],
+            mode='lines+markers', name='M4 hybrid: next-week forecast',
+            line=dict(color='#d18838', width=4, dash='dash'),
+            marker=dict(color='#d18838', size=[7, 13], symbol=['circle', 'diamond']),
+            customdata=['Last recorded week', 'Forecast week'],
+            hovertemplate='<b>%{customdata}</b><br>%{x|%d %b %Y}<br>RM %{y:.2f}<extra></extra>'
+        ))
+        forecast_fig.add_annotation(
+            x=forecast_target, y=forecast_value,
+            text=f'<b>Forecast: RM {forecast_value:.2f}</b>',
+            showarrow=True, arrowhead=2, ax=-85, ay=-48,
+            font=dict(color='#99591a', size=13), bgcolor='#fff4e4',
+            bordercolor='#e8cba2', borderpad=5
+        )
+    forecast_fig.update_layout(
+        height=450, autosize=True, width=None,
+        margin=dict(l=15, r=20, t=35, b=75),
+        hovermode='x unified',
+        xaxis_title='Week', yaxis_title='Weekly retail price (RM)',
+        legend=dict(orientation='h', x=0, y=-0.23),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+    )
+    forecast_fig.update_xaxes(showgrid=True, gridcolor='#e8eeec')
+    forecast_fig.update_yaxes(showgrid=True, gridcolor='#e8eeec', tickprefix='RM ')
+    st.plotly_chart(forecast_fig, use_container_width=True,
+                    config={'responsive': True}, key=f'forecast_line_{vegetable}')
+    st.caption('Solid green = observed weekly retail prices; dashed orange = the single next-week hybrid forecast. The orange point is a prediction, not an actual observed price.')
+else:
+    # Chart always exists even when the optional historical price CSV has not
+    # been added to GitHub. This is a forecast-comparison chart, not history.
+    forecast_comparison = sorted_models(selected_forecasts).dropna(subset=['forecast_price'])
+    if not forecast_comparison.empty:
+        st.info('Historical weekly prices are not available in the deployed files. Showing the saved one-week-ahead forecasts from all five models instead.')
+        vals = forecast_comparison['forecast_price'].astype(float).tolist()
+        colors = ['#cf9c60' if name != hybrid_name else '#20846d'
+                  for name in forecast_comparison['model'].astype(str)]
+        compare_fig = go.Figure(go.Bar(
+            y=forecast_comparison['model'].astype(str), x=vals,
+            orientation='h', marker_color=colors,
+            text=[f'RM {value:.2f}' for value in vals], textposition='outside',
+            cliponaxis=False,
+            hovertemplate='<b>%{y}</b><br>27 July 2026 forecast: RM %{x:.2f}<extra></extra>'
+        ))
+        compare_fig.update_layout(
+            height=400, autosize=True, width=None,
+            margin=dict(l=15, r=65, t=15, b=45),
+            xaxis_title='Predicted weekly retail price (RM)',
+            yaxis_title='',
+            yaxis=dict(autorange='reversed'),
+            xaxis=dict(range=[0, max(vals) * 1.22] if max(vals) > 0 else None),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(compare_fig, use_container_width=True,
+                        config={'responsive': True}, key=f'forecast_comparison_{vegetable}')
+        st.caption('These are five saved model forecasts for the same historical target week. They do not represent five observed market prices.')
+    else:
+        st.warning('No forecasting data are available for the selected vegetable.')
+
+st.divider()
+# SHAP follows the forecasting graph and updates with the selected vegetable.
+# It explains M3b (weather-aware N-BEATSX), not the M4 hybrid forecast.
 SHAP_VALUES = {
     'Cabbage': ('Batu Pahat rainfall', .034949, .033331, .006720, .000707),
     'Chilli': ('Cameron Highlands rainfall', .092971, .079317, .021079, .001461),
@@ -483,25 +581,6 @@ weather on market prices. These are M3b weather-feature attributions and <b>must
 be described as an explanation of the separate M4 hybrid forecast displayed above.</small></p>
 </div>''', unsafe_allow_html=True)
 st.caption('The bars group the absolute sums of the two weather-location contributions within each sampled forecast. The top individual feature is calculated separately, so its magnitude need not match the rainfall bar.')
-
-st.divider()
-st.subheader('Observed weekly prices and the hybrid forecast')
-if prices is not None:
-    hist = prices[prices['vegetable'].str.casefold() == vegetable.casefold()].sort_values('week_start').tail(30)
-    if not hist.empty:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=hist['week_start'], y=hist['retail_price'], mode='lines+markers', name='Recorded price', line=dict(color='#24806b', width=3), hovertemplate='<b>Recorded weekly price</b><br>Week: %{x|%d %b %Y}<br>Price: RM %{y:.2f}<extra></extra>'))
-        if not hybrid_f.empty:
-            target = pd.to_datetime(hybrid_f.iloc[0]['forecast_week'])
-            forecast_val = float(hybrid_f.iloc[0]['forecast_price'])
-            fig.add_trace(go.Scatter(x=[hist.iloc[-1]['week_start'], target], y=[hist.iloc[-1]['retail_price'], forecast_val], mode='lines+markers', name='Combined-model forecast', line=dict(color='#c8893b', width=3, dash='dash'), hovertemplate='<b>Price / forecast</b><br>Week: %{x|%d %b %Y}<br>RM %{y:.2f}<extra></extra>'))
-        fig.update_layout(autosize=True, hovermode='x unified', transition=dict(duration=450, easing='cubic-in-out'), height=390, xaxis_title='Week', yaxis_title='Retail price (RM)', legend=dict(orientation='h', y=-.25), margin=dict(l=10, r=10, t=10, b=20))
-        fig.update_layout(autosize=True, width=None)
-        st.plotly_chart(fig, use_container_width=True, config={"responsive": True}, key=f"vegcast_chart_1_{vegetable}")
-    else:
-        st.info('No observed weekly prices were found for this vegetable.')
-else:
-    st.info('To show actual historical prices, add deployment/weekly_vegetable_prices.csv (columns: week_start, vegetable, retail_price). No price history is invented.')
 
 st.divider()
 st.subheader('How accurate were the five forecasting methods?')
