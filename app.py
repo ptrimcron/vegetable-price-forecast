@@ -102,9 +102,10 @@ st.markdown('''<style>
   text-overflow:clip!important;
   white-space:nowrap!important;
   max-width:100%!important;
-  font-size:clamp(1.13rem,1.65vw,1.85rem)!important;
-  line-height:1.25!important;
-  letter-spacing:-.02em!important;
+  /* Larger result numbers; card grid still wraps on narrower screens. */
+  font-size:clamp(1.85rem,2.35vw,2.7rem)!important;
+  line-height:1.2!important;
+  letter-spacing:-.035em!important;
 }
 [data-testid="stMetricLabel"]{min-height:45px!important}
 [data-testid="stSidebarUserContent"]{padding-top:1.2rem}
@@ -587,15 +588,61 @@ st.caption('The bars group the absolute sums of the two weather-location contrib
 
 st.divider()
 st.subheader('How accurate were the five forecasting methods?')
-st.caption('Shorter bars mean smaller average prediction mistakes. Hover over a bar to see the method and its exact error.')
-chart_data = sorted_models(selected_metrics).dropna(subset=['MAE'])
+st.caption('Models are ranked using held-out test MAE. The best model has the LOWEST error and is highlighted in green.')
+chart_data = selected_metrics.dropna(subset=['MAE']).drop_duplicates(subset=['model']).copy()
 if not chart_data.empty:
-    fig = px.bar(chart_data, x='model', y='MAE', color='model', text='MAE',
-                 color_discrete_sequence=['#527f70', '#7a9b8e', '#b9a178', '#d0a45b', '#385f86'])
-    fig.update_traces(texttemplate='RM %{y:.3f}', textposition='outside', hovertemplate='<b>%{x}</b><br>Average prediction error: RM %{y:.4f}<br>Smaller means more accurate on past test weeks<extra></extra>')
-    fig.update_layout(autosize=True, transition=dict(duration=450, easing='cubic-in-out'), showlegend=False, height=410, xaxis_title='', yaxis_title='Average prediction error (RM)', margin=dict(t=35, b=40))
-    fig.update_layout(autosize=True, width=None)
-    st.plotly_chart(fig, use_container_width=True, config={"responsive": True}, key=f"vegcast_chart_2_{vegetable}")
+    # Rank models dynamically for whichever vegetable is selected. This uses
+    # the actual evaluation CSV when available, not a hard-coded winner.
+    chart_data['MAE'] = pd.to_numeric(chart_data['MAE'], errors='coerce')
+    chart_data = chart_data.dropna(subset=['MAE']).sort_values(
+        ['MAE', 'model'], ascending=[True, True]
+    ).reset_index(drop=True)
+    if not chart_data.empty:
+        best_mae = float(chart_data.iloc[0]['MAE'])
+        best_models = chart_data.loc[chart_data['MAE'].sub(best_mae).abs() < 1e-10, 'model'].tolist()
+        winner_text = ', '.join(str(model) for model in best_models)
+        st.success(f'🏆 BEST MODEL FOR {vegetable.upper()}: {winner_text} — lowest MAE {best_mae:.4f}')
+
+        short_labels = {
+            'M1 ARIMA': 'M1 · ARIMA',
+            'M2 LSTM': 'M2 · LSTM',
+            'M3a N-BEATSX Price Only': 'M3a · N-BEATSX (Price Only)',
+            'M3b N-BEATSX + Weather': 'M3b · N-BEATSX (+ Weather)',
+            'M4 Hybrid': 'M4 · Hybrid',
+        }
+        ranked_names = []
+        ranked_values = chart_data['MAE'].astype(float).tolist()
+        ranked_colors = []
+        for i, row in chart_data.iterrows():
+            name = str(row['model'])
+            is_best = abs(float(row['MAE']) - best_mae) < 1e-10
+            ranked_names.append(f'#{i + 1}  {short_labels.get(name, name)}' + ('  ★ BEST' if is_best else ''))
+            ranked_colors.append('#17866D' if is_best else '#BACDC8')
+
+        fig = go.Figure(go.Bar(
+            x=ranked_values, y=ranked_names, orientation='h',
+            marker=dict(color=ranked_colors, line=dict(width=0)),
+            text=[f'{v:.4f}' for v in ranked_values],
+            textposition='outside', textfont=dict(size=19, color='#263746'),
+            cliponaxis=False,
+            customdata=chart_data['model'].astype(str),
+            hovertemplate='<b>%{customdata}</b><br>MAE: %{x:.4f}<br>Lower error = better prediction accuracy<extra></extra>'
+        ))
+        fig.update_layout(
+            title=dict(text='Model ranking — best at the top', font=dict(size=20), x=0.01),
+            autosize=True, width=None, height=430, showlegend=False,
+            margin=dict(l=15, r=95, t=68, b=45),
+            font=dict(size=15, color='#344254'),
+            xaxis=dict(title='MAE — lower is better', range=[0, max(ranked_values) * 1.18] if max(ranked_values) > 0 else None,
+                       tickfont=dict(size=14), gridcolor='#E7ECEB', zeroline=False),
+            yaxis=dict(title='', autorange='reversed', tickfont=dict(size=16), automargin=True),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            bargap=0.34,
+        )
+        st.plotly_chart(fig, use_container_width=True,
+                        config={"responsive": True, "displaylogo": False},
+                        key=f"vegcast_chart_2_{vegetable}")
+        st.caption('Green = lowest MAE (most accurate on these test weeks). Grey = other models. MAE is mathematically measured in RM, although numbers are shown without an RM prefix.')
 if not selected_forecasts.empty:
     st.markdown('**Next-week prototype forecasts by model**')
     show = sorted_models(selected_forecasts)[['model', 'forecast_price']].copy()
